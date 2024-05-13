@@ -1,0 +1,65 @@
+name: "Go"
+
+on:
+  merge_group:
+    types:
+      - checks_requested
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - main
+      - prod
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+      - name: Golang CI Lint
+        uses: golangci/golangci-lint-action@v5
+        with:
+          version: v1.58
+          args: --timeout=10m --issues-exit-code=0
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Set version
+        id: vars
+        run: |
+          echo "VERSION=$(date --rfc-3339=date)_$(echo ${{ github.head_ref }} | sed 's:.*/::')_$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Run test
+        run: |
+          export GOPATH="$HOME/go/"
+          export PATH=$PATH:$GOPATH/bin
+          export GO_TEST_RESULT_FILEPATH=${{ github.workspace }}/tests-result/results-${{ steps.vars.outputs.VERSION }}.txt
+          go install github.com/jstemmer/go-junit-report/v2@v2.1.0
+          mkdir ${{ github.workspace }}/tests-result
+          docker compose build test
+          docker compose run --rm test | tee $GO_TEST_RESULT_FILEPATH
+          cat $GO_TEST_RESULT_FILEPATH | go-junit-report -set-exit-code > ${{ github.workspace }}/tests-result/report.xml
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: actor-api-test-results
+          path: ${{ github.workspace }}/tests-result/results-${{ steps.vars.outputs.VERSION }}.txt
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: |
+            ${{ github.workspace }}/tests-result/report.xml

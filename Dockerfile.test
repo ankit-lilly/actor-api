@@ -1,0 +1,10 @@
+FROM golang:1.22.3
+
+WORKDIR /src/app
+
+COPY go.* ./
+RUN go mod download
+
+COPY . .
+
+CMD ["go", "test", "./internal/...", "-v"]
